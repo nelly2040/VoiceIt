@@ -1,23 +1,15 @@
 import express from 'express'
 import jwt from 'jsonwebtoken'
+import bcrypt from 'bcryptjs'
 import { body, validationResult } from 'express-validator'
-import mongoose from 'mongoose'
-import User from '../models/User.js'
+import { DatabaseService } from '../services/database.js'
 
 const router = express.Router()
 
-// In-memory storage fallback
-let memoryUsers = []
-
 const generateToken = (userId) => {
-  return jwt.sign({ userId }, process.env.JWT_SECRET || 'voiceit-secret-key-2024', {
+  return jwt.sign({ userId }, process.env.JWT_SECRET, {
     expiresIn: '30d'
   })
-}
-
-// Check if MongoDB is connected
-const isMongoDBConnected = () => {
-  return mongoose.connection.readyState === 1
 }
 
 // Register
@@ -34,64 +26,43 @@ router.post('/register', [
 
     const { name, email, password } = req.body
 
-    // Check if using MongoDB or fallback
-    if (isMongoDBConnected()) {
-      // MongoDB registration
-      const existingUser = await User.findOne({ email })
-      if (existingUser) {
-        return res.status(400).json({ message: 'User already exists with this email' })
-      }
+    // REMOVED: Admin email restriction check
 
-      const user = await User.create({ name, email, password })
-      const token = generateToken(user._id)
-
-      res.status(201).json({
-        message: 'User registered successfully',
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      })
-    } else {
-      // In-memory registration (fallback)
-      const existingUser = memoryUsers.find(user => user.email === email)
-      if (existingUser) {
-        return res.status(400).json({ message: 'User already exists with this email' })
-      }
-
-      const newUser = {
-        id: Date.now().toString(),
-        name,
-        email,
-        password: password, // In real app, hash this password
-        role: 'user'
-      }
-
-      memoryUsers.push(newUser)
-
-      const token = generateToken(newUser.id)
-
-      res.status(201).json({
-        message: 'User registered successfully (using fallback storage)',
-        token,
-        user: {
-          id: newUser.id,
-          name: newUser.name,
-          email: newUser.email,
-          role: newUser.role
-        }
-      })
-    }
-  } catch (error) {
-    console.error('Registration error:', error)
-    
-    if (error.code === 11000) {
+    // Check if user already exists
+    const existingUser = await DatabaseService.findUserByEmail(email)
+    if (existingUser) {
       return res.status(400).json({ message: 'User already exists with this email' })
     }
-    
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 12)
+
+    // Determine role - if it's the admin email, set as admin
+    const role = email === 'adminvoiceit@gmail.com' ? 'admin' : 'user'
+
+    // Create new user
+    const user = await DatabaseService.createUser({
+      name,
+      email,
+      password: hashedPassword,
+      role: role
+    })
+
+    // Generate token
+    const token = generateToken(user.id)
+
+    res.status(201).json({
+      message: 'User registered successfully',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    })
+  } catch (error) {
+    console.error('Registration error:', error)
     res.status(500).json({ 
       message: 'Server error during registration',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
@@ -112,55 +83,44 @@ router.post('/login', [
 
     const { email, password } = req.body
 
-    if (isMongoDBConnected()) {
-      // MongoDB login
-      const user = await User.findOne({ email })
-      if (!user) {
-        return res.status(401).json({ message: 'Invalid email or password' })
-      }
+    console.log('🔐 Login attempt for:', email)
+    console.log('📧 Provided password:', password)
 
-      const isPasswordValid = await user.correctPassword(password)
-      if (!isPasswordValid) {
-        return res.status(401).json({ message: 'Invalid email or password' })
-      }
-
-      const token = generateToken(user._id)
-
-      res.json({
-        message: 'Login successful',
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      })
-    } else {
-      // In-memory login (fallback)
-      const user = memoryUsers.find(u => u.email === email)
-      if (!user) {
-        return res.status(401).json({ message: 'Invalid email or password' })
-      }
-
-      // Simple password check for fallback (in real app, use bcrypt)
-      if (user.password !== password) {
-        return res.status(401).json({ message: 'Invalid email or password' })
-      }
-
-      const token = generateToken(user.id)
-
-      res.json({
-        message: 'Login successful (using fallback storage)',
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role
-        }
-      })
+    // Find user
+    const user = await DatabaseService.findUserByEmail(email)
+    console.log('👤 User found:', user ? 'Yes' : 'No')
+    
+    if (!user) {
+      console.log('❌ User not found')
+      return res.status(401).json({ message: 'Invalid email or password' })
     }
+
+    console.log('🔑 Stored password hash:', user.password)
+    console.log('🔑 Password length:', user.password.length)
+
+    // Check password
+    const isPasswordValid = await bcrypt.compare(password, user.password)
+    console.log('✅ Password valid:', isPasswordValid)
+
+    if (!isPasswordValid) {
+      console.log('❌ Invalid password')
+      return res.status(401).json({ message: 'Invalid email or password' })
+    }
+
+    // Generate token
+    const token = generateToken(user.id)
+    console.log('🎫 Token generated for user:', user.id)
+
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    })
   } catch (error) {
     console.error('Login error:', error)
     res.status(500).json({ 
@@ -170,4 +130,71 @@ router.post('/login', [
   }
 })
 
+// Get current user
+router.get('/me', async (req, res) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '')
+    
+    if (!token) {
+      return res.status(401).json({ message: 'No token provided' })
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
+    const user = await DatabaseService.findUserById(decoded.userId)
+    
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    res.json({
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role
+      }
+    })
+  } catch (error) {
+    console.error('Get user error:', error)
+    res.status(401).json({ message: 'Invalid token' })
+  }
+})
+
+// Temporary debug route - remove after testing
+router.post('/debug-admin', async (req, res) => {
+  try {
+    const user = await DatabaseService.findUserByEmail('adminvoiceit@gmail.com')
+    
+    if (!user) {
+      return res.json({ 
+        exists: false,
+        message: 'Admin user not found in database' 
+      })
+    }
+
+    // Test password with bcrypt
+    const testPassword = '5678admin'
+    const isPasswordValid = await bcrypt.compare(testPassword, user.password)
+    
+    res.json({
+      exists: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        password_hash: user.password,
+        password_length: user.password.length
+      },
+      password_test: {
+        test_password: testPassword,
+        is_valid: isPasswordValid
+      }
+    })
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+
+// Make sure this is at the end of the file
 export default router

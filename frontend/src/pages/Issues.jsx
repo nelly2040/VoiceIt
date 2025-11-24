@@ -12,22 +12,27 @@ const Issues = () => {
   const statuses = ['all', 'reported', 'acknowledged', 'in-progress', 'resolved']
 
   const filteredIssues = issues.filter(issue => {
+    if (!issue) return false // Add safety check
     const statusMatch = filter === 'all' || issue.status === filter
     const categoryMatch = category === 'all' || issue.category === category
     return statusMatch && categoryMatch
   })
 
   const handleUpvote = async (issueId) => {
-    if (!user) {
-      alert('Please login to upvote issues')
-      return
-    }
-    try {
-      await upvoteIssue(issueId)
-    } catch (error) {
-      console.error('Error upvoting:', error)
-    }
+  if (!user) {
+    alert('Please login to upvote issues')
+    return
   }
+  
+  try {
+    console.log('🎯 Upvoting issue:', issueId)
+    await upvoteIssue(issueId)
+    console.log('✅ Upvote completed for issue:', issueId)
+  } catch (error) {
+    console.error('❌ Error upvoting:', error)
+    alert(error.response?.data?.message || error.message || 'Error upvoting issue')
+  }
+}
 
   const getStatusColor = (status) => {
     switch (status) {
@@ -46,7 +51,6 @@ const Issues = () => {
           <h1 className="text-3xl font-bold text-gray-900 mb-4 lg:mb-0">Community Issues</h1>
           
           <div className="flex flex-wrap gap-4">
-            {/* Status Filter */}
             <div className="flex items-center space-x-2">
               <Filter className="h-4 w-4 text-gray-500" />
               <select
@@ -62,7 +66,6 @@ const Issues = () => {
               </select>
             </div>
 
-            {/* Category Filter */}
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
@@ -78,54 +81,58 @@ const Issues = () => {
         </div>
 
         <div className="grid gap-6">
-          {filteredIssues.map((issue) => (
-            <div key={issue._id} className="border rounded-lg p-6 hover:shadow-md transition-shadow">
-              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between">
-                <div className="flex-1">
-                  <div className="flex items-start justify-between mb-2">
-                    <Link
-                      to={`/issues/${issue._id}`}
-                      className="text-xl font-semibold text-gray-900 hover:text-primary transition-colors"
-                    >
-                      {issue.title}
-                    </Link>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(issue.status)}`}>
-                      {issue.status.replace('-', ' ')}
-                    </span>
+          {filteredIssues.map((issue) => {
+            if (!issue) return null // Safety check
+            
+            return (
+              <div key={issue.id} className="border rounded-lg p-6 hover:shadow-md transition-shadow">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-start justify-between mb-2">
+                      <Link
+                        to={`/issues/${issue.id}`}
+                        className="text-xl font-semibold text-gray-900 hover:text-primary transition-colors"
+                      >
+                        {issue.title}
+                      </Link>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(issue.status)}`}>
+                        {issue.status?.replace('-', ' ') || 'Unknown'}
+                      </span>
+                    </div>
+                    
+                    <p className="text-gray-600 mb-4">{issue.description}</p>
+                    
+                    <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
+                      <span className="capitalize bg-gray-100 px-3 py-1 rounded-full">
+                        {issue.category || 'unknown'}
+                      </span>
+                      <span>{issue.location_address || 'No address'}</span>
+                      <span>{issue.created_at ? new Date(issue.created_at).toLocaleDateString() : 'Unknown date'}</span>
+                      <span>Reported by {issue.users?.name || issue.reporter_id || 'Anonymous'}</span>
+                    </div>
                   </div>
-                  
-                  <p className="text-gray-600 mb-4">{issue.description}</p>
-                  
-                  <div className="flex flex-wrap items-center gap-4 text-sm text-gray-500">
-                    <span className="capitalize bg-gray-100 px-3 py-1 rounded-full">
-                      {issue.category}
-                    </span>
-                    <span>{issue.location.address}</span>
-                    <span>{new Date(issue.createdAt).toLocaleDateString()}</span>
-                    <span>Reported by {issue.reporter?.name || 'Anonymous'}</span>
-                  </div>
-                </div>
 
-                <div className="flex lg:flex-col items-center lg:items-end space-x-4 lg:space-x-0 lg:space-y-2 mt-4 lg:mt-0 lg:ml-6">
-                  <button
-                    onClick={() => handleUpvote(issue._id)}
-                    className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-lg transition-colors"
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                    <span>{issue.upvotes || 0}</span>
-                  </button>
-                  
-                  <Link
-                    to={`/issues/${issue._id}`}
-                    className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg transition-colors"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    <span>{issue.comments?.length || 0}</span>
-                  </Link>
+                  <div className="flex lg:flex-col items-center lg:items-end space-x-4 lg:space-x-0 lg:space-y-2 mt-4 lg:mt-0 lg:ml-6">
+                    <button
+                      onClick={() => handleUpvote(issue.id)}
+                      className="flex items-center space-x-1 bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-lg transition-colors"
+                    >
+                      <ArrowUp className="h-4 w-4" />
+                      <span>{issue.upvotes || 0}</span>
+                    </button>
+                    
+                    <Link
+                      to={`/issues/${issue.id}`}
+                      className="flex items-center space-x-1 text-gray-500 hover:text-gray-700 px-3 py-2 rounded-lg transition-colors"
+                    >
+                      <MessageCircle className="h-4 w-4" />
+                      <span>{issue.comments?.length || 0}</span>
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {filteredIssues.length === 0 && (

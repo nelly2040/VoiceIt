@@ -127,10 +127,13 @@ const Login = () => {
 
           {/* Admin Demo Credentials */}
           <div className="mt-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h4 className="text-sm font-medium text-blue-800 mb-2">Demo Admin Credentials:</h4>
+            <h4 className="text-sm font-medium text-blue-800 mb-2">Admin Credentials:</h4>
             <p className="text-xs text-blue-700">
               Email: adminvoiceit@gmail.com<br />
               Password: 5678admin
+            </p>
+            <p className="text-xs text-blue-600 mt-2">
+              ✅ Admins will be redirected to the Admin Dashboard automatically
             </p>
           </div>
         </form>

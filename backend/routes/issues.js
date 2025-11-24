@@ -2,7 +2,7 @@ import express from 'express'
 import multer from 'multer'
 import { body, validationResult } from 'express-validator'
 import auth from '../middleware/auth.js'
-import Issue from '../models/Issue.js'
+import { DatabaseService } from '../services/database.js'
 import cloudinary from '../config/cloudinary.js'
 
 const router = express.Router()
@@ -20,6 +20,31 @@ const upload = multer({
     } else {
       cb(new Error('Only image files are allowed!'), false)
     }
+  }
+})
+
+// Get all issues
+router.get('/', async (req, res) => {
+  try {
+    const issues = await DatabaseService.getAllIssues()
+    res.json(issues)
+  } catch (error) {
+    console.error('Get issues error:', error)
+    res.status(500).json({ message: 'Server error fetching issues' })
+  }
+})
+
+// Get single issue
+router.get('/:id', async (req, res) => {
+  try {
+    const issue = await DatabaseService.getIssueById(req.params.id)
+    if (!issue) {
+      return res.status(404).json({ message: 'Issue not found' })
+    }
+    res.json(issue)
+  } catch (error) {
+    console.error('Get issue error:', error)
+    res.status(500).json({ message: 'Server error fetching issue' })
   }
 })
 
@@ -43,39 +68,6 @@ const uploadToCloudinary = async (fileBuffer) => {
     ).end(fileBuffer)
   })
 }
-
-// Get all issues
-router.get('/', async (req, res) => {
-  try {
-    const issues = await Issue.find()
-      .populate('reporter', 'name email')
-      .populate('comments.user', 'name')
-      .sort({ createdAt: -1 })
-    
-    res.json(issues)
-  } catch (error) {
-    console.error('Get issues error:', error)
-    res.status(500).json({ message: 'Server error fetching issues' })
-  }
-})
-
-// Get single issue
-router.get('/:id', async (req, res) => {
-  try {
-    const issue = await Issue.findById(req.params.id)
-      .populate('reporter', 'name email')
-      .populate('comments.user', 'name')
-    
-    if (!issue) {
-      return res.status(404).json({ message: 'Issue not found' })
-    }
-    
-    res.json(issue)
-  } catch (error) {
-    console.error('Get issue error:', error)
-    res.status(500).json({ message: 'Server error fetching issue' })
-  }
-})
 
 // Create issue with image upload
 router.post('/', auth, upload.array('images', 5), [
@@ -101,7 +93,6 @@ router.post('/', auth, upload.array('images', 5), [
         try {
           const result = await uploadToCloudinary(file.buffer)
           imageUrls.push(result.secure_url)
-          console.log('✅ Image uploaded to Cloudinary:', result.secure_url)
         } catch (uploadError) {
           console.error('Image upload error:', uploadError)
           return res.status(500).json({ message: 'Error uploading images' })
@@ -109,65 +100,74 @@ router.post('/', auth, upload.array('images', 5), [
       }
     }
 
-    const issue = await Issue.create({
+    const issue = await DatabaseService.createIssue({
       title,
       description,
       category,
-      location: {
-        address,
-        coordinates: {
-          lat: parseFloat(latitude),
-          lng: parseFloat(longitude)
-        }
-      },
+      status: 'reported',
+      location_address: address,
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
       images: imageUrls,
-      reporter: req.user._id
+      reporter_id: req.user.id,
+      upvotes: 0
     })
 
-    // Populate the reporter info
-    await issue.populate('reporter', 'name email')
-    
-    console.log('✅ New issue created:', issue.title)
     res.status(201).json(issue)
   } catch (error) {
     console.error('Create issue error:', error)
-    res.status(500).json({ 
-      message: 'Server error creating issue',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    })
+    res.status(500).json({ message: 'Server error creating issue' })
   }
 })
 
 // Upvote issue
 router.post('/:id/upvote', auth, async (req, res) => {
   try {
-    const issue = await Issue.findById(req.params.id)
-    
-    if (!issue) {
-      return res.status(404).json({ message: 'Issue not found' })
-    }
-
-    const hasUpvoted = issue.upvotedBy.includes(req.user._id)
-    
-    if (hasUpvoted) {
-      // Remove upvote
-      issue.upvotes = Math.max(0, issue.upvotes - 1)
-      issue.upvotedBy = issue.upvotedBy.filter(
-        userId => userId.toString() !== req.user._id.toString()
-      )
-    } else {
-      // Add upvote
-      issue.upvotes += 1
-      issue.upvotedBy.push(req.user._id)
-    }
-
-    await issue.save()
-    await issue.populate('reporter', 'name email')
-    
+    const issue = await DatabaseService.toggleUpvote(req.params.id, req.user.id)
     res.json(issue)
   } catch (error) {
     console.error('Upvote error:', error)
     res.status(500).json({ message: 'Server error upvoting issue' })
+  }
+})
+
+// Debug upvote status
+router.get('/:id/upvote-status', auth, async (req, res) => {
+  try {
+    const issueId = req.params.id
+    const userId = req.user.id
+
+    // Check if user has upvoted this issue
+    const { data: existingUpvote, error } = await supabase
+      .from('upvotes')
+      .select('id')
+      .eq('issue_id', issueId)
+      .eq('user_id', userId)
+      .single()
+
+    if (error && error.code !== 'PGRST116') {
+      throw error
+    }
+
+    // Get current upvote count
+    const { data: issue, error: issueError } = await supabase
+      .from('issues')
+      .select('upvotes')
+      .eq('id', issueId)
+      .single()
+
+    if (issueError) throw issueError
+
+    res.json({
+      issue_id: issueId,
+      user_id: userId,
+      has_upvoted: !!existingUpvote,
+      current_upvotes: issue.upvotes,
+      upvote_record: existingUpvote
+    })
+  } catch (error) {
+    console.error('Debug upvote error:', error)
+    res.status(500).json({ message: 'Error checking upvote status' })
   }
 })
 
@@ -182,17 +182,7 @@ router.patch('/:id/status', auth, [
     }
 
     const { status } = req.body
-    const issue = await Issue.findById(req.params.id)
-    
-    if (!issue) {
-      return res.status(404).json({ message: 'Issue not found' })
-    }
-
-    issue.status = status
-    issue.updatedAt = new Date()
-    await issue.save()
-    await issue.populate('reporter', 'name email')
-    
+    const issue = await DatabaseService.updateIssueStatus(req.params.id, status)
     res.json(issue)
   } catch (error) {
     console.error('Update status error:', error)
@@ -211,59 +201,11 @@ router.post('/:id/comments', auth, [
     }
 
     const { text } = req.body
-    const issue = await Issue.findById(req.params.id)
-    
-    if (!issue) {
-      return res.status(404).json({ message: 'Issue not found' })
-    }
-
-    issue.comments.push({
-      user: req.user._id,
-      text,
-      createdAt: new Date()
-    })
-
-    issue.updatedAt = new Date()
-    await issue.save()
-    await issue.populate('reporter', 'name email')
-    await issue.populate('comments.user', 'name')
-    
-    res.json(issue)
+    const comment = await DatabaseService.addComment(req.params.id, req.user.id, text)
+    res.json(comment)
   } catch (error) {
     console.error('Add comment error:', error)
     res.status(500).json({ message: 'Server error adding comment' })
-  }
-})
-
-// Delete issue (admin only)
-router.delete('/:id', auth, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Admin access required' })
-    }
-
-    const issue = await Issue.findById(req.params.id)
-    if (!issue) {
-      return res.status(404).json({ message: 'Issue not found' })
-    }
-
-    // Delete images from Cloudinary
-    if (issue.images && issue.images.length > 0) {
-      for (const imageUrl of issue.images) {
-        try {
-          const publicId = imageUrl.split('/').pop().split('.')[0]
-          await cloudinary.uploader.destroy(`voiceit/issues/${publicId}`)
-        } catch (cloudinaryError) {
-          console.error('Error deleting image from Cloudinary:', cloudinaryError)
-        }
-      }
-    }
-
-    await Issue.findByIdAndDelete(req.params.id)
-    res.json({ message: 'Issue deleted successfully' })
-  } catch (error) {
-    console.error('Delete issue error:', error)
-    res.status(500).json({ message: 'Server error deleting issue' })
   }
 })
 

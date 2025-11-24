@@ -25,40 +25,40 @@ const Register = () => {
   }
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-    
-    // Prevent admin registration through normal registration
-    if (formData.email === 'adminvoiceit@gmail.com') {
-      setError('This email is reserved for administrator use. Please use a different email.')
-      return
-    }
-    
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match')
-      return
-    }
-
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters long')
-      return
-    }
-
-    setIsLoading(true)
-    setError('')
-
-    try {
-      await register({
-        name: formData.name,
-        email: formData.email,
-        password: formData.password
-      })
-      navigate('/dashboard')
-    } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed. Please try again.')
-    } finally {
-      setIsLoading(false)
-    }
+  e.preventDefault()
+  
+  if (formData.password !== formData.confirmPassword) {
+    setError('Passwords do not match')
+    return
   }
+
+  if (formData.password.length < 6) {
+    setError('Password must be at least 6 characters long')
+    return
+  }
+
+  setIsLoading(true)
+  setError('')
+
+  try {
+    const result = await register({
+      name: formData.name,
+      email: formData.email,
+      password: formData.password
+    })
+    
+    // Redirect based on user role
+    if (result.user.role === 'admin') {
+      navigate('/admin')
+    } else {
+      navigate('/dashboard')
+    }
+  } catch (err) {
+    setError(err.response?.data?.message || 'Registration failed. Please try again.')
+  } finally {
+    setIsLoading(false)
+  }
+}
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">

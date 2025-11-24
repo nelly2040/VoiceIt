@@ -25,6 +25,11 @@ const Home = () => {
     }
   }
 
+  // Filter out issues with invalid coordinates
+  const validIssues = issues.filter(issue => 
+    issue && typeof issue.latitude === 'number' && typeof issue.longitude === 'number'
+  )
+
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       {/* Hero Section */}
@@ -49,7 +54,7 @@ const Home = () => {
         <h2 className="text-2xl font-bold text-gray-900 mb-4">Current Issues in Your Area</h2>
         <div className="h-96 rounded-lg overflow-hidden">
           <MapContainer
-            center={[40.7128, -74.0060]} // Default to NYC
+            center={[-1.2921, 36.8219]} // Nairobi coordinates
             zoom={13}
             style={{ height: '100%', width: '100%' }}
           >
@@ -57,10 +62,10 @@ const Home = () => {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            {issues.map((issue) => (
+            {validIssues.map((issue) => (
               <Marker
-                key={issue._id}
-                position={[issue.location.coordinates.lat, issue.location.coordinates.lng]}
+                key={issue.id}
+                position={[issue.latitude, issue.longitude]}
               >
                 <Popup>
                   <div className="p-2">
@@ -91,26 +96,42 @@ const Home = () => {
         </div>
         
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {issues.slice(0, 6).map((issue) => (
-            <div key={issue._id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-start justify-between mb-2">
-                <h3 className="font-semibold text-gray-900">{issue.title}</h3>
-                {getStatusIcon(issue.status)}
+          {issues.slice(0, 6).map((issue) => {
+            if (!issue) return null // Safety check
+            
+            return (
+              <div key={issue.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-semibold text-gray-900">{issue.title}</h3>
+                  {getStatusIcon(issue.status)}
+                </div>
+                <p className="text-sm text-gray-600 mb-2 line-clamp-2">{issue.description}</p>
+                <div className="flex justify-between items-center text-xs text-gray-500">
+                  <span className="capitalize">{issue.category}</span>
+                  <span>{issue.created_at ? new Date(issue.created_at).toLocaleDateString() : 'Unknown date'}</span>
+                </div>
+                <div className="flex justify-between items-center mt-2">
+                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(issue.status)}`}>
+                    {issue.status}
+                  </span>
+                  <span className="text-sm text-gray-600">{issue.upvotes || 0} upvotes</span>
+                </div>
               </div>
-              <p className="text-sm text-gray-600 mb-2 line-clamp-2">{issue.description}</p>
-              <div className="flex justify-between items-center text-xs text-gray-500">
-                <span className="capitalize">{issue.category}</span>
-                <span>{new Date(issue.createdAt).toLocaleDateString()}</span>
-              </div>
-              <div className="flex justify-between items-center mt-2">
-                <span className={`px-2 py-1 rounded-full text-xs ${getStatusColor(issue.status)}`}>
-                  {issue.status}
-                </span>
-                <span className="text-sm text-gray-600">{issue.upvotes} upvotes</span>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
+
+        {issues.length === 0 && (
+          <div className="text-center py-8">
+            <p className="text-gray-500">No issues reported yet. Be the first to report an issue!</p>
+            <Link
+              to="/report"
+              className="inline-block mt-4 bg-primary text-white px-6 py-2 rounded-lg hover:bg-blue-700"
+            >
+              Report First Issue
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   )

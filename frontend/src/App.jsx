@@ -9,7 +9,7 @@ import IssueDetail from './pages/IssueDetail'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import Register from './pages/Register'
-import Admin from './pages/Admin'
+import Admin from './pages/Admin' // Make sure this import exists
 
 function App() {
   return (
@@ -25,7 +25,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
-            <Route path="/admin" element={<Admin />} />
+            <Route path="/admin" element={<Admin />} /> {/* Make sure this route exists */}
           </Routes>
         </div>
       </Router>

@@ -61,19 +61,22 @@ const ReportIssue = () => {
       formData.append('title', data.title)
       formData.append('description', data.description)
       formData.append('category', data.category)
-      formData.append('latitude', position.lat)
-      formData.append('longitude', position.lng)
+      formData.append('latitude', position.lat.toString())
+      formData.append('longitude', position.lng.toString())
       formData.append('address', data.address)
 
+      // Append images
       images.forEach((image) => {
         formData.append('images', image)
       })
 
       await createIssue(formData)
+      alert('Issue reported successfully!')
       navigate('/')
     } catch (error) {
       console.error('Error creating issue:', error)
-      alert('Error creating issue. Please try again.')
+      const errorMessage = error.response?.data?.message || 'Error creating issue. Please try again.'
+      alert(errorMessage)
     } finally {
       setIsSubmitting(false)
     }
@@ -179,8 +182,8 @@ const ReportIssue = () => {
               
               <div className="h-64 rounded-lg overflow-hidden border">
                 <MapContainer
-                  center={[40.7128, -74.0060]}
-                  zoom={13}
+                  center={[-1.2921, 36.8219]} // Nairobi coordinates
+                  zoom={12}
                   style={{ height: '100%', width: '100%' }}
                 >
                   <TileLayer
@@ -195,6 +198,11 @@ const ReportIssue = () => {
               <div className="flex items-center text-sm text-gray-600">
                 <MapPin className="h-4 w-4 mr-2" />
                 Click on the map to select the exact location
+                {position && (
+                  <span className="ml-4 text-green-600">
+                    Location selected: {position.lat.toFixed(4)}, {position.lng.toFixed(4)}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -219,7 +227,7 @@ const ReportIssue = () => {
                 <span className="text-gray-600"> or drag and drop</span>
               </label>
               <p className="text-xs text-gray-500 mt-1">
-                PNG, JPG, GIF up to 10MB each
+                PNG, JPG, GIF up to 5MB each
               </p>
             </div>
             {images.length > 0 && (

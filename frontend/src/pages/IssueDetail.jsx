@@ -31,17 +31,21 @@ const IssueDetail = () => {
   }
 
   const handleUpvote = async () => {
-    if (!user) {
-      alert('Please login to upvote issues')
-      return
-    }
-    try {
-      const updatedIssue = await upvoteIssue(id)
-      setIssue(updatedIssue)
-    } catch (error) {
-      console.error('Error upvoting:', error)
-    }
+  if (!user) {
+    alert('Please login to upvote issues')
+    return
   }
+  
+  try {
+    console.log('🎯 Upvoting issue from detail page:', id)
+    const updatedIssue = await upvoteIssue(id)
+    setIssue(updatedIssue)
+    console.log('✅ Upvote completed for issue:', id)
+  } catch (error) {
+    console.error('❌ Error upvoting:', error)
+    alert(error.response?.data?.message || error.message || 'Error upvoting issue')
+  }
+}
 
   const handleAddComment = async (e) => {
     e.preventDefault()
@@ -114,14 +118,14 @@ const IssueDetail = () => {
                 <h1 className="text-3xl font-bold text-gray-900 mb-2">{issue.title}</h1>
                 <div className="flex flex-wrap items-center gap-4 text-sm text-gray-600 mb-4">
                   <span className={`px-3 py-1 rounded-full font-medium ${getStatusColor(issue.status)}`}>
-                    {issue.status.replace('-', ' ')}
+                    {issue.status?.replace('-', ' ') || 'Unknown'}
                   </span>
                   <span className="capitalize bg-gray-100 px-3 py-1 rounded-full">
                     {issue.category}
                   </span>
                   <span className="flex items-center">
                     <Calendar className="h-4 w-4 mr-1" />
-                    {new Date(issue.createdAt).toLocaleDateString()}
+                    {issue.created_at ? new Date(issue.created_at).toLocaleDateString() : 'Unknown date'}
                   </span>
                 </div>
               </div>
@@ -143,7 +147,7 @@ const IssueDetail = () => {
 
             <div className="flex items-center text-sm text-gray-600">
               <User className="h-4 w-4 mr-2" />
-              <span>Reported by {issue.reporter?.name || 'Anonymous'}</span>
+              <span>Reported by {issue.users?.name || 'Anonymous'}</span>
             </div>
           </div>
 
@@ -155,7 +159,7 @@ const IssueDetail = () => {
             </h2>
             <div className="h-64 rounded-lg overflow-hidden">
               <MapContainer
-                center={[issue.location.coordinates.lat, issue.location.coordinates.lng]}
+                center={[issue.latitude || -1.2921, issue.longitude || 36.8219]}
                 zoom={15}
                 style={{ height: '100%', width: '100%' }}
               >
@@ -163,17 +167,17 @@ const IssueDetail = () => {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                 />
-                <Marker position={[issue.location.coordinates.lat, issue.location.coordinates.lng]}>
+                <Marker position={[issue.latitude || -1.2921, issue.longitude || 36.8219]}>
                   <Popup>
                     <div className="p-2">
                       <h3 className="font-semibold">{issue.title}</h3>
-                      <p className="text-sm text-gray-600">{issue.location.address}</p>
+                      <p className="text-sm text-gray-600">{issue.location_address}</p>
                     </div>
                   </Popup>
                 </Marker>
               </MapContainer>
             </div>
-            <p className="text-sm text-gray-600 mt-2">{issue.location.address}</p>
+            <p className="text-sm text-gray-600 mt-2">{issue.location_address}</p>
           </div>
 
           {/* Comments Section */}
@@ -220,7 +224,7 @@ const IssueDetail = () => {
             <div className="space-y-4">
               {issue.comments?.length > 0 ? (
                 issue.comments.map((comment, index) => (
-                  <div key={index} className="border-b border-gray-200 pb-4 last:border-b-0">
+                  <div key={comment.id || index} className="border-b border-gray-200 pb-4 last:border-b-0">
                     <div className="flex items-start space-x-3">
                       <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                         <User className="h-4 w-4 text-white" />
@@ -228,10 +232,10 @@ const IssueDetail = () => {
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="font-semibold text-gray-900">
-                            {comment.user?.name || 'Anonymous'}
+                            {comment.users?.name || comment.user_id || 'Anonymous'}
                           </span>
                           <span className="text-xs text-gray-500">
-                            {new Date(comment.createdAt).toLocaleDateString()}
+                            {comment.created_at ? new Date(comment.created_at).toLocaleDateString() : 'Unknown date'}
                           </span>
                         </div>
                         <p className="text-gray-700">{comment.text}</p>
@@ -273,12 +277,12 @@ const IssueDetail = () => {
               <div className="flex justify-between">
                 <span className="text-gray-600">Status</span>
                 <span className={`px-2 py-1 rounded text-sm font-medium ${getStatusColor(issue.status)}`}>
-                  {issue.status}
+                  {issue.status || 'Unknown'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Category</span>
-                <span className="font-medium capitalize">{issue.category}</span>
+                <span className="font-medium capitalize">{issue.category || 'Unknown'}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Upvotes</span>
@@ -291,13 +295,13 @@ const IssueDetail = () => {
               <div className="flex justify-between">
                 <span className="text-gray-600">Reported</span>
                 <span className="font-medium">
-                  {new Date(issue.createdAt).toLocaleDateString()}
+                  {issue.created_at ? new Date(issue.created_at).toLocaleDateString() : 'Unknown'}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-600">Last Updated</span>
                 <span className="font-medium">
-                  {new Date(issue.updatedAt).toLocaleDateString()}
+                  {issue.updated_at ? new Date(issue.updated_at).toLocaleDateString() : 'Unknown'}
                 </span>
               </div>
             </div>
