@@ -1,10 +1,48 @@
 import express from 'express'
+import multer from 'multer'
 import { body, validationResult } from 'express-validator'
 import auth from '../middleware/auth.js'
 import Issue from '../models/Issue.js'
-import User from '../models/User.js'
+import cloudinary from '../config/cloudinary.js'
 
 const router = express.Router()
+
+// Configure multer for file uploads
+const storage = multer.memoryStorage()
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit
+  },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true)
+    } else {
+      cb(new Error('Only image files are allowed!'), false)
+    }
+  }
+})
+
+// Upload image to Cloudinary
+const uploadToCloudinary = async (fileBuffer) => {
+  return new Promise((resolve, reject) => {
+    cloudinary.uploader.upload_stream(
+      {
+        resource_type: 'image',
+        folder: 'voiceit/issues',
+        transformation: [
+          { width: 1200, height: 800, crop: 'limit' },
+          { quality: 'auto' },
+          { format: 'jpg' }
+        ]
+      },
+      (error, result) => {
+        if (error) reject(error)
+        else resolve(result)
+      }
+    ).end(fileBuffer)
+  })
+}
 
 // Get all issues
 router.get('/', async (req, res) => {
@@ -39,8 +77,8 @@ router.get('/:id', async (req, res) => {
   }
 })
 
-// Create issue
-router.post('/', auth, [
+// Create issue with image upload
+router.post('/', auth, upload.array('images', 5), [
   body('title').notEmpty().withMessage('Title is required'),
   body('description').notEmpty().withMessage('Description is required'),
   body('category').isIn(['pothole', 'garbage', 'streetlight', 'traffic-signal', 'parks', 'sidewalk', 'other']).withMessage('Valid category is required'),
@@ -56,6 +94,21 @@ router.post('/', auth, [
 
     const { title, description, category, address, latitude, longitude } = req.body
 
+    // Upload images to Cloudinary
+    const imageUrls = []
+    if (req.files && req.files.length > 0) {
+      for (const file of req.files) {
+        try {
+          const result = await uploadToCloudinary(file.buffer)
+          imageUrls.push(result.secure_url)
+          console.log('✅ Image uploaded to Cloudinary:', result.secure_url)
+        } catch (uploadError) {
+          console.error('Image upload error:', uploadError)
+          return res.status(500).json({ message: 'Error uploading images' })
+        }
+      }
+    }
+
     const issue = await Issue.create({
       title,
       description,
@@ -67,17 +120,21 @@ router.post('/', auth, [
           lng: parseFloat(longitude)
         }
       },
-      images: req.body.images || [],
-      reporter: req.user.id
+      images: imageUrls,
+      reporter: req.user._id
     })
 
     // Populate the reporter info
     await issue.populate('reporter', 'name email')
     
+    console.log('✅ New issue created:', issue.title)
     res.status(201).json(issue)
   } catch (error) {
     console.error('Create issue error:', error)
-    res.status(500).json({ message: 'Server error creating issue' })
+    res.status(500).json({ 
+      message: 'Server error creating issue',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    })
   }
 })
 
@@ -90,18 +147,18 @@ router.post('/:id/upvote', auth, async (req, res) => {
       return res.status(404).json({ message: 'Issue not found' })
     }
 
-    const hasUpvoted = issue.upvotedBy.includes(req.user.id)
+    const hasUpvoted = issue.upvotedBy.includes(req.user._id)
     
     if (hasUpvoted) {
       // Remove upvote
       issue.upvotes = Math.max(0, issue.upvotes - 1)
       issue.upvotedBy = issue.upvotedBy.filter(
-        userId => userId.toString() !== req.user.id
+        userId => userId.toString() !== req.user._id.toString()
       )
     } else {
       // Add upvote
       issue.upvotes += 1
-      issue.upvotedBy.push(req.user.id)
+      issue.upvotedBy.push(req.user._id)
     }
 
     await issue.save()
@@ -132,6 +189,7 @@ router.patch('/:id/status', auth, [
     }
 
     issue.status = status
+    issue.updatedAt = new Date()
     await issue.save()
     await issue.populate('reporter', 'name email')
     
@@ -160,10 +218,12 @@ router.post('/:id/comments', auth, [
     }
 
     issue.comments.push({
-      user: req.user.id,
-      text
+      user: req.user._id,
+      text,
+      createdAt: new Date()
     })
 
+    issue.updatedAt = new Date()
     await issue.save()
     await issue.populate('reporter', 'name email')
     await issue.populate('comments.user', 'name')
@@ -172,6 +232,38 @@ router.post('/:id/comments', auth, [
   } catch (error) {
     console.error('Add comment error:', error)
     res.status(500).json({ message: 'Server error adding comment' })
+  }
+})
+
+// Delete issue (admin only)
+router.delete('/:id', auth, async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({ message: 'Admin access required' })
+    }
+
+    const issue = await Issue.findById(req.params.id)
+    if (!issue) {
+      return res.status(404).json({ message: 'Issue not found' })
+    }
+
+    // Delete images from Cloudinary
+    if (issue.images && issue.images.length > 0) {
+      for (const imageUrl of issue.images) {
+        try {
+          const publicId = imageUrl.split('/').pop().split('.')[0]
+          await cloudinary.uploader.destroy(`voiceit/issues/${publicId}`)
+        } catch (cloudinaryError) {
+          console.error('Error deleting image from Cloudinary:', cloudinaryError)
+        }
+      }
+    }
+
+    await Issue.findByIdAndDelete(req.params.id)
+    res.json({ message: 'Issue deleted successfully' })
+  } catch (error) {
+    console.error('Delete issue error:', error)
+    res.status(500).json({ message: 'Server error deleting issue' })
   }
 })
 

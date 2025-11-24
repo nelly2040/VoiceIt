@@ -4,20 +4,22 @@ import bcrypt from 'bcryptjs'
 const userSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
-    trim: true
+    required: [true, 'Name is required'],
+    trim: true,
+    minlength: [2, 'Name must be at least 2 characters long']
   },
   email: {
     type: String,
-    required: true,
+    required: [true, 'Email is required'],
     unique: true,
     lowercase: true,
-    trim: true
+    trim: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
   },
   password: {
     type: String,
-    required: true,
-    minlength: 6
+    required: [true, 'Password is required'],
+    minlength: [6, 'Password must be at least 6 characters long']
   },
   role: {
     type: String,
@@ -54,15 +56,21 @@ userSchema.methods.correctPassword = async function(candidatePassword) {
 
 // Create admin user if doesn't exist
 userSchema.statics.initAdmin = async function() {
-  const adminExists = await this.findOne({ email: 'adminvoiceit@gmail.com' })
-  if (!adminExists) {
-    await this.create({
-      name: 'Admin User',
-      email: 'adminvoiceit@gmail.com',
-      password: '5678admin',
-      role: 'admin'
-    })
-    console.log('✅ Admin user created successfully')
+  try {
+    const adminExists = await this.findOne({ email: 'adminvoiceit@gmail.com' })
+    if (!adminExists) {
+      await this.create({
+        name: 'Admin User',
+        email: 'adminvoiceit@gmail.com',
+        password: '5678admin',
+        role: 'admin'
+      })
+      console.log('✅ Admin user created: adminvoiceit@gmail.com / 5678admin')
+    } else {
+      console.log('✅ Admin user already exists')
+    }
+  } catch (error) {
+    console.error('❌ Error creating admin user:', error.message)
   }
 }
 
