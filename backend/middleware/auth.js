@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import User from '../models/User.js'
+import { DatabaseService } from '../services/database.js'
 
 const auth = async (req, res, next) => {
   try {
@@ -9,18 +9,25 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ message: 'No token, authorization denied' })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'voiceit-secret-key-2024')
+    // Verify the token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET)
     
-    // MongoDB authentication only
-    const user = await User.findById(decoded.userId).select('-password')
+    // Check if the user ID is a valid UUID
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(decoded.userId)) {
+      return res.status(401).json({ message: 'Invalid user ID format' })
+    }
+
+    const user = await DatabaseService.findUserById(decoded.userId)
+    
     if (!user) {
-      return res.status(401).json({ message: 'Token is not valid - user not found' })
+      return res.status(401).json({ message: 'User not found' })
     }
 
     req.user = user
     next()
   } catch (error) {
-    console.error('Auth middleware error:', error.message)
+    console.error('Auth middleware error:', error)
     
     if (error.name === 'JsonWebTokenError') {
       return res.status(401).json({ message: 'Invalid token' })
@@ -28,10 +35,6 @@ const auth = async (req, res, next) => {
     
     if (error.name === 'TokenExpiredError') {
       return res.status(401).json({ message: 'Token expired' })
-    }
-    
-    if (error.name === 'CastError') {
-      return res.status(401).json({ message: 'Invalid user ID format' })
     }
     
     res.status(401).json({ message: 'Token is not valid' })
