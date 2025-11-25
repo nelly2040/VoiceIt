@@ -47,6 +47,52 @@ export class DatabaseService {
     return data
   }
 
+  static async getAdminStats(timeFilter = 'all') {
+  try {
+    let query = supabase.from('issues').select('*')
+    
+    // Apply time filter
+    const now = new Date()
+    switch (timeFilter) {
+      case 'today':
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+        query = query.gte('created_at', today.toISOString())
+        break
+      case 'week':
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        query = query.gte('created_at', weekAgo.toISOString())
+        break
+      case 'month':
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        query = query.gte('created_at', monthAgo.toISOString())
+        break
+      // 'all' returns everything
+    }
+
+    const { data: issues, error } = await query
+
+    if (error) throw error
+
+    // Calculate stats
+    const stats = {
+      total: issues.length,
+      reported: issues.filter(issue => issue.status === 'reported').length,
+      acknowledged: issues.filter(issue => issue.status === 'acknowledged').length,
+      inProgress: issues.filter(issue => issue.status === 'in-progress').length,
+      resolved: issues.filter(issue => issue.status === 'resolved').length,
+      urgentIssues: issues.filter(issue => (issue.upvotes || 0) > 10).length
+    }
+
+    // Calculate resolution rate
+    stats.resolutionRate = stats.total > 0 ? Math.round((stats.resolved / stats.total) * 100) : 0
+
+    return stats
+  } catch (error) {
+    console.error('Get admin stats error:', error)
+    throw error
+  }
+  }
+
   // Issue operations
   static async createIssue(issueData) {
     const { data, error } = await supabase

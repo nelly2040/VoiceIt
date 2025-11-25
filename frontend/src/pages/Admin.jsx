@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Filter, Search, Eye, Edit, Trash2, User, MapPin, Calendar, Shield, BarChart3, TrendingUp, Users, AlertTriangle, CheckCircle, Clock } from 'lucide-react'
+import { Filter, Search, Eye, Trash2, User, MapPin, Calendar, Shield, BarChart3, TrendingUp, AlertTriangle, CheckCircle, Clock, ArrowLeft, RefreshCw } from 'lucide-react'
 import { useIssues } from '../contexts/IssueContext'
 
 const Admin = () => {
@@ -9,7 +9,10 @@ const Admin = () => {
   const [statusFilter, setStatusFilter] = useState('all')
   const [categoryFilter, setCategoryFilter] = useState('all')
   const [searchTerm, setSearchTerm] = useState('')
-  const [timeFilter, setTimeFilter] = useState('all') // all, today, week, month
+  const [timeFilter, setTimeFilter] = useState('all')
+  const [loading, setLoading] = useState(false)
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
 
   // Redirect non-admin users
   useEffect(() => {
@@ -61,15 +64,15 @@ const Admin = () => {
     switch (timeFilter) {
       case 'today':
         return issues.filter(issue => {
-          const issueDate = new Date(issue.createdAt)
+          const issueDate = new Date(issue.created_at)
           return issueDate.toDateString() === now.toDateString()
         })
       case 'week':
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        return issues.filter(issue => new Date(issue.createdAt) >= weekAgo)
+        return issues.filter(issue => new Date(issue.created_at) >= weekAgo)
       case 'month':
         const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        return issues.filter(issue => new Date(issue.createdAt) >= monthAgo)
+        return issues.filter(issue => new Date(issue.created_at) >= monthAgo)
       default:
         return issues
     }
@@ -78,11 +81,12 @@ const Admin = () => {
   const timeFilteredIssues = filterIssuesByTime(issues)
 
   const filteredIssues = timeFilteredIssues.filter(issue => {
+    if (!issue) return false
     const statusMatch = statusFilter === 'all' || issue.status === statusFilter
     const categoryMatch = categoryFilter === 'all' || issue.category === categoryFilter
     const searchMatch = issue.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                        issue.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                       issue.location.address.toLowerCase().includes(searchTerm.toLowerCase())
+                       issue.location_address.toLowerCase().includes(searchTerm.toLowerCase())
     
     return statusMatch && categoryMatch && searchMatch
   })
@@ -96,17 +100,6 @@ const Admin = () => {
     return timeFilteredIssues.filter(issue => issue.category === category).length
   }
 
-  const getTopReporters = () => {
-    const reporterCount = {}
-    timeFilteredIssues.forEach(issue => {
-      const reporterName = issue.reporter?.name || 'Anonymous'
-      reporterCount[reporterName] = (reporterCount[reporterName] || 0) + 1
-    })
-    return Object.entries(reporterCount)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 5)
-  }
-
   const getResolutionRate = () => {
     const resolved = timeFilteredIssues.filter(issue => issue.status === 'resolved').length
     const total = timeFilteredIssues.length
@@ -118,8 +111,8 @@ const Admin = () => {
     if (resolvedIssues.length === 0) return 0
     
     const totalTime = resolvedIssues.reduce((sum, issue) => {
-      const created = new Date(issue.createdAt)
-      const updated = new Date(issue.updatedAt)
+      const created = new Date(issue.created_at)
+      const updated = new Date(issue.updated_at)
       return sum + (updated - created)
     }, 0)
     
@@ -134,7 +127,7 @@ const Admin = () => {
     resolved: getStatusCount('resolved'),
     resolutionRate: getResolutionRate(),
     avgResolutionTime: getAverageResolutionTime(),
-    urgentIssues: timeFilteredIssues.filter(issue => issue.upvotes > 10).length
+    urgentIssues: timeFilteredIssues.filter(issue => (issue.upvotes || 0) > 10).length
   }
 
   const categoryStats = categories.filter(cat => cat !== 'all').map(category => ({
@@ -143,14 +136,79 @@ const Admin = () => {
     percentage: timeFilteredIssues.length > 0 ? Math.round((getCategoryCount(category) / timeFilteredIssues.length) * 100) : 0
   }))
 
-  const topReporters = getTopReporters()
-
   const handleStatusChange = async (issueId, newStatus) => {
     try {
-      await updateIssueStatus(issueId, newStatus)
+      setLoading(true)
+      console.log('🎯 Updating status for issue:', issueId, 'to:', newStatus)
+      
+      const token = localStorage.getItem('token')
+      if (!token) {
+        throw new Error('Authentication required')
+      }
+
+      const response = await fetch(
+        `${API_BASE_URL}/issues/${issueId}/status`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ status: newStatus })
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to update status')
+      }
+
+      const updatedIssue = await response.json()
+      console.log('✅ Status update successful:', updatedIssue)
+      
+      // Refresh the page to get updated data
+      window.location.reload()
+      
     } catch (error) {
-      console.error('Error updating status:', error)
-      alert('Error updating issue status')
+      console.error('❌ Error updating issue status:', error)
+      alert(`Failed to update status: ${error.message}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleDeleteIssue = async (issueId) => {
+    if (!confirm('Are you sure you want to delete this issue? This action cannot be undone.')) {
+      return
+    }
+
+    try {
+      setLoading(true)
+      const token = localStorage.getItem('token')
+      
+      const response = await fetch(
+        `${API_BASE_URL}/issues/${issueId}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.message || 'Failed to delete issue')
+      }
+
+      alert('Issue deleted successfully!')
+      window.location.reload()
+      
+    } catch (error) {
+      console.error('❌ Error deleting issue:', error)
+      alert(`Failed to delete issue: ${error.message}`)
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -159,9 +217,13 @@ const Admin = () => {
       case 'reported': return 'bg-yellow-100 text-yellow-800 border-yellow-200'
       case 'acknowledged': return 'bg-blue-100 text-blue-800 border-blue-200'
       case 'in-progress': return 'bg-orange-100 text-orange-800 border-orange-200'
-      case 'resolved': return 'bg-resolved text-white border-green-200'
+      case 'resolved': return 'bg-green-100 text-green-800 border-green-200'
       default: return 'bg-gray-100 text-gray-800 border-gray-200'
     }
+  }
+
+  const refreshData = () => {
+    window.location.reload()
   }
 
   return (
@@ -169,13 +231,33 @@ const Admin = () => {
       {/* Header */}
       <div className="bg-white rounded-lg shadow-lg p-6 mb-8">
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
-            <p className="text-gray-600">Comprehensive overview of all reported issues and system analytics</p>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900 transition-colors"
+            >
+              <ArrowLeft className="h-5 w-5" />
+              <span>Back to Site</span>
+            </button>
+            <div className="h-6 w-px bg-gray-300"></div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+              <p className="text-gray-600">Manage and track all reported issues in the system</p>
+            </div>
           </div>
-          <div className="flex items-center space-x-2 bg-blue-50 px-4 py-2 rounded-lg">
-            <Shield className="h-5 w-5 text-blue-600" />
-            <span className="text-blue-700 font-medium">Administrator</span>
+          <div className="flex items-center space-x-4">
+            <button
+              onClick={refreshData}
+              disabled={loading}
+              className="flex items-center space-x-2 bg-primary text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+            <div className="flex items-center space-x-2 bg-blue-50 px-4 py-2 rounded-lg">
+              <Shield className="h-5 w-5 text-blue-600" />
+              <span className="text-blue-700 font-medium">Administrator</span>
+            </div>
           </div>
         </div>
       </div>
@@ -202,6 +284,16 @@ const Admin = () => {
         </div>
       </div>
 
+      {/* Loading Overlay */}
+      {loading && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 flex items-center space-x-3">
+            <RefreshCw className="h-6 w-6 animate-spin text-primary" />
+            <span className="text-gray-700">Processing...</span>
+          </div>
+        </div>
+      )}
+
       {/* Key Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <div className="bg-white rounded-lg shadow-lg p-6">
@@ -212,7 +304,7 @@ const Admin = () => {
               <p className="text-xs text-gray-500 mt-1">{timeFilters.find(f => f.value === timeFilter)?.label}</p>
             </div>
             <div className="p-3 bg-blue-100 rounded-lg">
-              <BarChart3 className="h-6 w-6 text-primary" />
+              <BarChart3 className="h-6 w-6 text-blue-600" />
             </div>
           </div>
         </div>
@@ -221,11 +313,11 @@ const Admin = () => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Resolution Rate</p>
-              <p className="text-2xl font-bold text-resolved">{stats.resolutionRate}%</p>
+              <p className="text-2xl font-bold text-green-600">{stats.resolutionRate}%</p>
               <p className="text-xs text-gray-500 mt-1">Issues resolved</p>
             </div>
             <div className="p-3 bg-green-100 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-resolved" />
+              <TrendingUp className="h-6 w-6 text-green-600" />
             </div>
           </div>
         </div>
@@ -257,8 +349,8 @@ const Admin = () => {
         </div>
       </div>
 
-      {/* Status Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+      {/* Status and Category Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Status Distribution */}
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Status Distribution</h3>
@@ -267,7 +359,7 @@ const Admin = () => {
               { status: 'reported', label: 'Reported', color: 'bg-yellow-500', count: stats.reported },
               { status: 'acknowledged', label: 'Acknowledged', color: 'bg-blue-500', count: stats.acknowledged },
               { status: 'in-progress', label: 'In Progress', color: 'bg-orange-500', count: stats.inProgress },
-              { status: 'resolved', label: 'Resolved', color: 'bg-resolved', count: stats.resolved }
+              { status: 'resolved', label: 'Resolved', color: 'bg-green-500', count: stats.resolved }
             ].map(item => (
               <div key={item.status} className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
@@ -287,7 +379,7 @@ const Admin = () => {
 
         {/* Category Distribution */}
         <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Category Distribution</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Categories</h3>
           <div className="space-y-3">
             {categoryStats
               .sort((a, b) => b.count - a.count)
@@ -301,27 +393,6 @@ const Admin = () => {
                   </div>
                 </div>
               ))}
-          </div>
-        </div>
-
-        {/* Top Reporters */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Reporters</h3>
-          <div className="space-y-3">
-            {topReporters.map(([reporter, count], index) => (
-              <div key={reporter} className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-white">{index + 1}</span>
-                  </div>
-                  <span className="text-sm font-medium text-gray-700">{reporter}</span>
-                </div>
-                <span className="text-sm font-bold text-gray-900">{count} issues</span>
-              </div>
-            ))}
-            {topReporters.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-4">No reporter data available</p>
-            )}
           </div>
         </div>
       </div>
@@ -339,7 +410,7 @@ const Admin = () => {
                 placeholder="Search issues..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-64"
               />
             </div>
 
@@ -404,11 +475,12 @@ const Admin = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredIssues.map((issue) => (
-                <tr key={issue._id} className="hover:bg-gray-50">
+                <tr key={issue.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{issue.title}</div>
                       <div className="text-sm text-gray-500 line-clamp-1">{issue.description}</div>
+                      <div className="text-xs text-gray-400 mt-1">{issue.location_address}</div>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -419,7 +491,7 @@ const Admin = () => {
                   <td className="px-6 py-4">
                     <div className="flex items-center">
                       <User className="h-4 w-4 text-gray-400 mr-2" />
-                      <span className="text-sm text-gray-900">{issue.reporter?.name || 'Anonymous'}</span>
+                      <span className="text-sm text-gray-900">{issue.users?.name || 'Anonymous'}</span>
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -431,7 +503,7 @@ const Admin = () => {
                   <td className="px-6 py-4">
                     <select
                       value={issue.status}
-                      onChange={(e) => handleStatusChange(issue._id, e.target.value)}
+                      onChange={(e) => handleStatusChange(issue.id, e.target.value)}
                       className={`text-sm font-medium rounded-full px-3 py-1 border focus:outline-none focus:ring-2 focus:ring-primary ${getStatusColor(issue.status)}`}
                     >
                       <option value="reported">Reported</option>
@@ -441,12 +513,12 @@ const Admin = () => {
                     </select>
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-500">
-                    {new Date(issue.createdAt).toLocaleDateString()}
+                    {issue.created_at ? new Date(issue.created_at).toLocaleDateString() : 'Unknown'}
                   </td>
                   <td className="px-6 py-4 text-sm font-medium">
                     <div className="flex space-x-2">
                       <button
-                        onClick={() => window.open(`/issues/${issue._id}`, '_blank')}
+                        onClick={() => window.open(`/issues/${issue.id}`, '_blank')}
                         className="text-blue-600 hover:text-blue-900 transition-colors"
                         title="View Details"
                       >
@@ -455,12 +527,7 @@ const Admin = () => {
                       <button
                         className="text-red-600 hover:text-red-900 transition-colors"
                         title="Delete Issue"
-                        onClick={() => {
-                          if (confirm('Are you sure you want to delete this issue?')) {
-                            // Add delete functionality here
-                            console.log('Delete issue:', issue._id)
-                          }
-                        }}
+                        onClick={() => handleDeleteIssue(issue.id)}
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>

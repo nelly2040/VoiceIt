@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import { MapPin, Plus, List, User, LogOut } from 'lucide-react'
+import { MapPin, Plus, List, User, LogOut, Settings } from 'lucide-react'
 import { useIssues } from '../contexts/IssueContext'
 
 const Navbar = () => {
@@ -12,6 +12,11 @@ const Navbar = () => {
     { path: '/report', icon: Plus, label: 'Report' },
     { path: '/issues', icon: List, label: 'Issues' },
   ]
+
+  // Add Admin link for admin users
+  if (user && user.role === 'admin') {
+    navItems.push({ path: '/admin', icon: Settings, label: 'Admin' })
+  }
 
   return (
     <nav className="bg-primary text-white shadow-lg">
