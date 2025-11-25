@@ -9,10 +9,9 @@ import authRoutes from './routes/auth.js';
 import issueRoutes from './routes/issues.js';
 import userRoutes from './routes/users.js';
 
-// Config and Services
+// Config - Import Supabase and Cloudinary config
 import './config/supabase.js';
 import './config/cloudinary.js';
-import { InitService } from './services/init.js';
 
 dotenv.config();
 
@@ -25,8 +24,8 @@ const app = express();
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'http://localhost:5173', 
-    'https://voiceitf.netlify.app'
+    'http://localhost:5173',
+    'https://voiceitf.netlify.app',  // Added Netlify URL
   ],
   credentials: true
 }));
@@ -48,26 +47,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Define the port
-const PORT = process.env.PORT || 10000;
+const PORT = process.env.PORT || 5000;
 
-// Initialize data on startup
-const initializeApp = async () => {
-  try {
-    await InitService.initializeAdmin();
-    await InitService.initializeSampleData();
-  } catch (error) {
-    console.log('Data initialization completed with warnings');
-  }
-  
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📊 Health check: https://your-backend-url.onrender.com/api/health`);
-    console.log(`🗄️  Database: Supabase PostgreSQL`);
-    console.log(`🌐 Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Ready' : 'Not configured'}`);
-    console.log(`🔐 Admin credentials: adminvoiceit@gmail.com / 5678admin`);
-    console.log(`🌍 CORS enabled for: https://voiceitf.netlify.app`);
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🗄️  Database: Supabase PostgreSQL`);
+  console.log(`🌐 Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Ready' : 'Not configured'}`);
+  console.log(`🔐 Admin credentials: adminvoiceit@gmail.com / 5678admin`);
+});
+
+// Serve static files in production
+if (process.env.NODE_ENV === 'production') {
+  app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist/index.html'));
   });
 }
-
-initializeApp();
