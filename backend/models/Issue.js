@@ -152,5 +152,3 @@ issueSchema.statics.createSampleData = async function(User) {
 }
 
 export default mongoose.model('Issue', issueSchema)
-
-
