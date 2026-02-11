@@ -75,5 +75,3 @@ userSchema.statics.initAdmin = async function() {
 }
 
 export default mongoose.model('User', userSchema)
-
-
