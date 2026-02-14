@@ -32,4 +32,3 @@ router.get('/my-issues', auth, async (req, res) => {
 })
 
 export default router
-
