@@ -85,4 +85,3 @@ app.listen(PORT, () => {
   console.log(`🌐 Cloudinary: ${process.env.CLOUDINARY_CLOUD_NAME ? 'Ready' : 'Not configured'}`)
   console.log(`🔐 Admin credentials: adminvoiceit@gmail.com / 5678admin`)
 })
-
