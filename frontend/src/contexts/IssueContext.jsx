@@ -197,4 +197,3 @@ export const IssueProvider = ({ children }) => {
     </IssueContext.Provider>
   )
 }
-
